@@ -61,7 +61,7 @@ runGame = do
           let ac = (startAuction (head playerStates1) players sampleCoalPlant)
            in
              case ac of
-               Left auction ->
+               Right auction ->
                      do
                        a' <- runAuction auction playerStates1
                        case (winningBid a') of
@@ -69,7 +69,7 @@ runGame = do
                            putStrLn "No winning bid"
                          Just (PlayerBid p amt) ->
                            putStrLn $ "Won by " ++ (show p) ++ " for " ++ (show amt)
-               Right err ->
+               Left err ->
                      putStrLn $ "Unable to start auction: " ++ err
 
 
@@ -100,14 +100,14 @@ handlePass a ps = let
                     mplayerState = findStateForPlayer ps (head $ bidders a)
                     passed = case mplayerState of
                                Just playerState -> pass playerState a
-                               _ -> Right "invalid player"
+                               _ -> Left "invalid player"
                   in
                     case passed of
-                      Right err -> do
+                      Left err -> do
                                      putStrLn $ "ERROR: " ++ err
                                      runAuction a ps
 
-                      Left a'   -> do
+                      Right a' -> do
                                      putStrLn $ "OKAY"
                                      runAuction a' ps
 
@@ -118,13 +118,13 @@ handleBid a ps v = let
                     mplayerState = findStateForPlayer ps (head $ bidders a)
                     result = case mplayerState of
                                Just playerState -> bid playerState bidAmt a
-                               _ -> Right "invalid player"
+                               _ -> Left "invalid player"
                    in
                     case result of
-                      Right err -> do
+                      Left err -> do
                                      putStrLn $ "ERROR: " ++ err
                                      runAuction a ps
-                      Left a'   -> do
+                      Right a' -> do
                                      runAuction a' ps
 
 p1 :: Player
@@ -148,7 +148,7 @@ sampleCoalPlant = PowerPlant {
                 }
 
 sampleAuctionState1 = case startAuction (initialPlayerState p1) [p1, p2] sampleCoalPlant of
-                        Left x -> x
+                        Right x -> x
 
 
 
@@ -158,8 +158,8 @@ sampleAuctionState2 = pass (initialPlayerState p1) sampleAuctionState1
 
 -- expect error (not your turn)
 sampleAuctionState2b = case sampleAuctionState2 of
-                         Left a -> pass (initialPlayerState p1) a
-                         _ -> Right "err: starting state invalid"
+                         Right a -> pass (initialPlayerState p1) a
+                         _ -> Left "err: starting state invalid"
 
 
 -- expect error (bid too low)

@@ -56,7 +56,7 @@ minimumBid a = case (bestBid a) of
                  Just (PlayerBid _ amt) -> amt + 1
                  _                      -> (plantInitialCost (auctionPlant a))
 
-type AuctionStateOrError = Either AuctionState String
+type AuctionStateOrError = Either String AuctionState
 
 
 -- input: state of the bidding player, amount of the bid, and the state of the auction prior to the bid
@@ -65,18 +65,18 @@ bid :: PlayerState -> Int -> AuctionState -> AuctionStateOrError
 bid playerState amount a = let minBidAmount = minimumBid a
                             in
                               if (amount >= minBidAmount)
-                                then Left a {
+                                then Right a {
                                   bestBid = Just $ PlayerBid (player playerState) amount,
                                   bidders = (tail (bidders a)) ++ [head (bidders a)]
                                 }
-                                else Right $ "err: bid must be at least " ++ (show minBidAmount)
+                                else Left $ "err: bid must be at least " ++ (show minBidAmount)
 
 -- input: state of the bidding player, and the state of the auction prior to the bid
 -- output: either a modified auction state (representing a successful bid) or an error message
 pass :: PlayerState -> AuctionState -> AuctionStateOrError
 pass playerState a = if ((player playerState) == head (bidders a))
-                     then Left  $ a {bidders = tail (bidders a) }
-                     else Right $ "err: it is " ++ (show $ head $ bidders a) ++ "'s turn"
+                     then Right  $ a {bidders = tail (bidders a) }
+                     else Left $ "err: it is " ++ (show $ head $ bidders a) ++ "'s turn"
 
 -- if an auction represents a "completed" auction, return the winning bid, otherwise return Nothing
 winningBid :: AuctionState -> Maybe Bid
