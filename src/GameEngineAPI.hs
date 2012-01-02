@@ -26,7 +26,7 @@ module GameEngineAPI (
 
 import BoardAPI
 import PlayerAPI
-import GameEngineAuctionAPI
+import AuctionAPI
 import PowerPlantAPI
 import Data.List
 import Data.Map (Map)

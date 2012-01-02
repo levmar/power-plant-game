@@ -2,7 +2,7 @@
 --
 -----------------------------------------------------------------------------
 
-module GameEngineAuctionAPI (
+module AuctionAPI (
 
   AuctionState(AuctionState),
   auctionPlant,

@@ -17,7 +17,7 @@ module Main (
 ) where
 
 import GameEngineAPI
-import GameEngineAuctionAPI
+import AuctionAPI
 import PlayerAPI
 import PowerPlantAPI
 import BoardAPI
