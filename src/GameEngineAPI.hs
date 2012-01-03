@@ -82,6 +82,9 @@ data BuildCitiesState = BuildCitiesState GameState [Player]
 -- players who still need to burn fuel at 0 or more plants
 data BurnFuelState = BurnFuelState GameState [Player]
 
+data EndOfTurn = CompletedGame GameState
+               | NextTurn GameState
+
 
 instance TurnPhaseState BuyPowerPlantsState where
   gameState (BuyPowerPlantsState gs _ _) = gs
@@ -94,6 +97,11 @@ instance TurnPhaseState BuildCitiesState where
 
 instance TurnPhaseState BurnFuelState where
   gameState (BurnFuelState gs _) = gs
+
+instance TurnPhaseState EndOfTurn where
+  gameState (CompletedGame gs) = gs
+  gameState (NextTurn gs) = gs
+
 
 computeTurnOrder :: GameState -> Player -> Player -> Ordering
 computeTurnOrder gs p1 p2 = let ps1 = findPlayerState p1 gs
@@ -174,7 +182,7 @@ endBuildCitiesPhase :: BuildCitiesState -> BurnFuelState
 endBuildCitiesPhase (BuildCitiesState gs players) = BurnFuelState gs (reverse $ currentTurnOrder gs)
 
 --TODO
-endTurn :: BurnFuelState -> Either BuyPowerPlantsState String
+endTurn :: BurnFuelState -> Either EndOfTurn String
 endTurn _ = Right "Game over"
 
 gameStep :: GameState -> GameStep
