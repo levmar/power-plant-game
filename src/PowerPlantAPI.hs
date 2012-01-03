@@ -21,6 +21,8 @@ module PowerPlantAPI (
   plantSupplies,
 
   PowerPlantState (PowerPlantState),
+  powerPlant,
+  availableFuel,
 
   initialPowerPlantState
 
@@ -41,6 +43,12 @@ data PowerPlant = PowerPlant {
   plantRequires :: Int,
   plantSupplies :: Int
 }
+
+instance Eq PowerPlant where
+  (==) p1 p2 = (plantInitialCost p1) == (plantInitialCost p2)
+
+instance Ord PowerPlant where
+ compare p1 p2 = compare (plantInitialCost p1) (plantInitialCost p2)
 
 instance Show PowerPlant where
   show p = show (plantInitialCost p)

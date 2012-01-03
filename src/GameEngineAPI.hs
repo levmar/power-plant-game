@@ -19,7 +19,13 @@ module GameEngineAPI (
   gamePowerPlants,
 
   GameState,
-  GameStep
+  GameStep,
+
+  completeAuction,
+  endBuyPowerPlantsPhase,
+
+  placeFuelOrder,
+  endBuyRawMaterialsPhase,
 
 
 ) where
@@ -52,6 +58,7 @@ data GameState = GameState {
   visiblePowerPlants :: [PowerPlant],
   hiddenPowerPlantStack :: [PowerPlant],
   playerStates :: [PlayerState],
+  currentTurnOrder :: [Player],
   fuelForPurchase :: Map Fuel Int
 }
 
@@ -67,8 +74,13 @@ data BuyPowerPlantsState = BuyPowerPlantsState GameState [Player] [CompletedAuct
 -- players who still need to buy 0 or more materials
 data BuyRawMaterialsState = BuyRawMaterialsState GameState [Player]
 
-data BuildCitiesState = BuildCitiesState GameState
-data BurnFuelState = BurnFuelState GameState
+-- game state
+-- players who still need to buy 0 or more cities
+data BuildCitiesState = BuildCitiesState GameState [Player]
+
+-- game state
+-- players who still need to burn fuel at 0 or more plants
+data BurnFuelState = BurnFuelState GameState [Player]
 
 
 instance TurnPhaseState BuyPowerPlantsState where
@@ -78,24 +90,26 @@ instance TurnPhaseState BuyRawMaterialsState where
   gameState (BuyRawMaterialsState gs _) = gs
 
 instance TurnPhaseState BuildCitiesState where
-  gameState (BuildCitiesState gs) = gs
+  gameState (BuildCitiesState gs _) = gs
 
 instance TurnPhaseState BurnFuelState where
-  gameState (BurnFuelState gs) = gs
+  gameState (BurnFuelState gs _) = gs
 
-turnOrder :: GameState -> Player -> Player -> Ordering
-turnOrder gs p1 p2 = let ps1 = findPlayerState p1 gs
-                         ps2 = findPlayerState p2 gs
-                         n1 = length $ getPlayerCities p1 gs
-                         n2 = length $ getPlayerCities p2 gs
-                      in compare n1 n2
+computeTurnOrder :: GameState -> Player -> Player -> Ordering
+computeTurnOrder gs p1 p2 = let ps1 = findPlayerState p1 gs
+                                ps2 = findPlayerState p2 gs
+                                n1 = length $ getPlayerCities p1 gs
+                                n2 = length $ getPlayerCities p2 gs
+                             in compare n1 n2
 
 findPlayerState :: Player -> GameState -> PlayerState
 findPlayerState p gs = head $ filter (\ps -> (player ps) == p) (playerStates gs)
 
 startTurn :: GameState -> BuyPowerPlantsState
-startTurn gs = BuyPowerPlantsState gs availableBidders []
-               where availableBidders = sortBy (turnOrder gs) (gamePlayers (game gs))
+startTurn gs = BuyPowerPlantsState gs' availableBidders []
+               where newOrder = sortBy (computeTurnOrder gs) (gamePlayers (game gs))
+                     availableBidders = newOrder
+                     gs' = gs { currentTurnOrder = newOrder }
 
 completeAuction :: BuyPowerPlantsState -> CompletedAuction -> BuyPowerPlantsState
 completeAuction (BuyPowerPlantsState gs avail completed) a @ (CompletedAuction _ (PlayerBid p _)) =
@@ -103,7 +117,7 @@ completeAuction (BuyPowerPlantsState gs avail completed) a @ (CompletedAuction _
 
 
 endBuyPowerPlantsPhase :: BuyPowerPlantsState -> BuyRawMaterialsState
-endBuyPowerPlantsPhase (BuyPowerPlantsState gs players auctions) = BuyRawMaterialsState gs' (reverse players)
+endBuyPowerPlantsPhase (BuyPowerPlantsState gs players auctions) = BuyRawMaterialsState gs' (currentTurnOrder gs)
                                  where oldPlayerStates = (playerStates gs)
                                        gs' = gs {
                                          playerStates = transactAuctions oldPlayerStates auctions
@@ -129,16 +143,20 @@ transactPlayerAuctions auctions ps = let p = player ps
 playerBalance :: Player -> GameState -> Int
 playerBalance p gs = balance $ findPlayerState p gs
 
---TODO
 placeFuelOrder :: BuyRawMaterialsState -> FuelOrder -> Player -> Either String BuyRawMaterialsState
 placeFuelOrder (BuyRawMaterialsState gs players) order p =
        let bal = playerBalance p gs
            cost = priceOfFuelOrder order (fuelForPurchase gs)
         in
-           if (bal < cost)
-           then  Left "Insufficient balance"
-           else
-             Right $ BuyRawMaterialsState gs' players'
+          if (p /= head players)
+            then Left $ "It is " ++ (show $ head players) ++ "'s turn"
+            else if (bal < cost)
+                 then  Left $ "Insufficient balance: " ++ (show cost) ++ " required, but only " ++ (show bal) ++ " available"
+                 else
+                   case validateFuelOrder order of
+                     Left errs -> Left $ "Inconsistent fuel order: " ++ (unwords errs)
+                     Right _ ->
+                       Right $ BuyRawMaterialsState gs' players'
                                  where qtyMap = fuelForPurchase gs
                                        adjustPlayerState = (\ps -> if (p == (player ps)) then (applyFuelOrderToPlayer order qtyMap ps) else ps)
                                        gs' = gs {
@@ -149,11 +167,11 @@ placeFuelOrder (BuyRawMaterialsState gs players) order p =
 
 --TODO
 endBuyRawMaterialsPhase :: BuyRawMaterialsState -> BuildCitiesState
-endBuyRawMaterialsPhase (BuyRawMaterialsState gs players) = BuildCitiesState gs
+endBuyRawMaterialsPhase (BuyRawMaterialsState gs players) = BuildCitiesState gs (reverse $ currentTurnOrder gs)
 
 --TODO
-endBuildCitiesState :: BuildCitiesState -> BurnFuelState
-endBuildCitiesState (BuildCitiesState gs) = BurnFuelState gs
+endBuildCitiesPhase :: BuildCitiesState -> BurnFuelState
+endBuildCitiesPhase (BuildCitiesState gs players) = BurnFuelState gs (reverse $ currentTurnOrder gs)
 
 --TODO
 endTurn :: BurnFuelState -> Either BuyPowerPlantsState String
@@ -245,14 +263,35 @@ priceOfFuelOrder order qtyMap = sum $ map (\(k,v) -> priceOfMany k v qtyMap) (Ma
 applyFuelOrder :: FuelOrder -> FuelSupply -> FuelSupply
 applyFuelOrder order qtyMap = Map.mapWithKey (\k -> \v -> v - (Map.findWithDefault 0 k (fuelOrderQuantities order))) qtyMap
 
---TODO handle storage of fuel (account for error where user cannot store fuel)
+-- validate that a FuelOrder is internally consistent
+-- i.e., that the storage plan accounts for the fuel being purchased, no more or less
+validateFuelOrder :: FuelOrder -> Either [String] FuelOrder
+validateFuelOrder order = if (length errs > 0) then Left errs else Right order
+  where errs = Map.foldrWithKey checkItem [] order
+        checkItem fuel (FuelOrderItem qty fuelStoragePlan) accum =
+            if (qty /= (sum $ Map.elems fuelStoragePlan))
+              then accum ++ ["Error: inconsistent fuel storage strategy"]
+              else accum
+
+
+quantityToStoreAtPowerPlant :: FuelOrder -> PowerPlant -> Int
+quantityToStoreAtPowerPlant order pp =
+    case Map.lookup (plantFuel pp) order of
+      Just (FuelOrderItem _ fuelStoragePlan) ->
+          Map.findWithDefault 0 pp fuelStoragePlan
+      _ -> 0
+
+applyFuelOrderToPowerPlantState :: FuelOrder -> PowerPlantState -> PowerPlantState
+applyFuelOrderToPowerPlantState order ps =
+    ps {
+      availableFuel = (availableFuel ps) + (quantityToStoreAtPowerPlant order (powerPlant ps))
+    }
+
 applyFuelOrderToPlayer :: FuelOrder -> FuelSupply -> PlayerState -> PlayerState
 applyFuelOrderToPlayer order qtyMap playerState =
-    let adjustPowerPlantState = id
-     in
         playerState {
           balance = (balance playerState) - (priceOfFuelOrder order qtyMap),
-          playerActivePlantStates = map adjustPowerPlantState (playerActivePlantStates playerState)
+          playerActivePlantStates = map (applyFuelOrderToPowerPlantState order) (playerActivePlantStates playerState)
         }
 
 initialGameState :: Game -> GameState
@@ -266,6 +305,7 @@ initialGameState g = let shuffledDeck = gamePowerPlants g
                          visiblePowerPlants = take 4 (drop 4 shuffledDeck),
                          hiddenPowerPlantStack = drop 8 shuffledDeck,
                          playerStates = map initialPlayerState (gamePlayers g),
+                         currentTurnOrder = (gamePlayers g),
                          fuelForPurchase = initialFuelSupply
                        }
 
